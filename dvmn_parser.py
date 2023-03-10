@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from modules_knowledge import MODULES_KNOWLEDGE
 
+
 def get_student_page(url):
     response = requests.get(url)
     response.raise_for_status()
