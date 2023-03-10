@@ -1,11 +1,15 @@
 import argparse
+import logging
 import random
 from textwrap import dedent
+from time import sleep
 
 import pandas
+import requests
 from num2words import num2words
 
 from modules_knowledge import MODULES_KNOWLEDGE
+from dvmn_parser import get_student_page, get_lesson
 
 PHRASES = {
     'knowledge_statuses': {
@@ -48,10 +52,16 @@ def main():
         help="Не сохранять в файл",
         action='store_true'
     )
+    parser.add_argument(
+        '--dont_use_link',
+        help="Не сохранять в файл",
+        action='store_true'
+    )
 
     args = parser.parse_args()
     manual_additions = args.manual_additions
     dont_save = args.dont_save
+    dont_use_link = args.dont_use_link
     students = pandas.read_excel(
         'feedback.xlsx',
         sheet_name='feedback',
@@ -61,38 +71,61 @@ def main():
             'Текущий модуль',
             'Текущий урок',
             'Статус урока',
+            'Ссылка на девман'
         ],
     ).to_dict(orient='records')
 
     feedbacks = []
     for student in students:
-        lesson_status = student['Статус урока']
-        module_name = student['Текущий модуль']
-        lesson_number_numerical = student["Текущий урок"]
-        lesson_number = num2words(lesson_number_numerical, to="ordinal", lang="ru")
-        module_knowledge = random.choice(MODULES_KNOWLEDGE[module_name][lesson_number_numerical])
-        commendation = random.choice(PHRASES['commendations'])
-        if lesson_status == 'В работе':
-            work_status = 'сейчас выполняет'
-            knowledge_status = random.choice(PHRASES['knowledge_statuses']['in_work'])
-        elif lesson_status == 'Сдается':
-            work_status = 'сейчас сдает'
-            knowledge_status = random.choice(PHRASES['knowledge_statuses']['completed'])
+        if student['Ссылка на девман'] and not dont_use_link:
+            print(student['Ссылка на девман'])
+            while True:
+                try:
+                    page_content = get_student_page(student['Ссылка на девман'])
+                    lesson = get_lesson(page_content)
+                    lesson_status = lesson['lesson_status']
+                    module_name = lesson['module_name']
+                    lesson_number_numerical = int(lesson['lesson_number'])
+                    break
+                except requests.exceptions.HTTPError as error:
+                    logging.warning(error)
+                    break
+                except requests.exceptions.ConnectionError:
+                    logging.warning("Connection Error\nPlease check your internet connection")
+                    sleep(5)
+                    logging.warning("Trying to reconnect")
         else:
-            work_status = 'недавно сдал'
-            knowledge_status = random.choice(PHRASES['knowledge_statuses']['completed'])
-        feedback = dedent(f'''\
-            {student["Имя для ОС"]} {work_status} {lesson_number} проект модуля {module_name} 
-            в ходе которого {knowledge_status} {module_knowledge}. На занятиях {commendation}.
-        ''')
-        print(feedback)
+            lesson_status = student['Статус урока']
+            module_name = student['Текущий модуль']
+            lesson_number_numerical = student["Текущий урок"]
+        lesson_number = num2words(lesson_number_numerical, to="ordinal", lang="ru")
+        try:
+            module_knowledge = random.choice(MODULES_KNOWLEDGE[module_name][lesson_number_numerical])
+            commendation = random.choice(PHRASES['commendations'])
+            if lesson_status == 'В работе':
+                work_status = 'сейчас выполняет'
+                knowledge_status = random.choice(PHRASES['knowledge_statuses']['in_work'])
+            elif lesson_status == 'Сдается':
+                work_status = 'сейчас сдает'
+                knowledge_status = random.choice(PHRASES['knowledge_statuses']['completed'])
+            else:
+                work_status = 'недавно сдал'
+                knowledge_status = random.choice(PHRASES['knowledge_statuses']['completed'])
+            feedback = dedent(f'''\
+                {student["Имя для ОС"]} {work_status} {lesson_number} проект модуля {module_name} 
+                в ходе которого {knowledge_status} {module_knowledge}. На занятиях {commendation}.
+            ''')
+            print(feedback)
 
-        if manual_additions:
-            additions = input('Чем дополним ОС?\n')
-            feedback += additions
-            print(feedback, '\n')
+            if manual_additions:
+                additions = input('Чем дополним ОС?\n')
+                feedback += additions
+                print(feedback, '\n')
 
-        feedbacks.append(feedback.replace('\n', ' '))
+            feedbacks.append(feedback.replace('\n', ' '))
+        except KeyError:
+            print(f'Модуля {module_name} нет в скрипте, ОС по {student["ФИО"]} не сгенерирована')
+            feedbacks.append('Текущего модуля нет в скрипте')
 
     if not dont_save:
         writer = pandas.ExcelWriter('feedback.xlsx', engine='openpyxl', mode='a', if_sheet_exists='overlay')
