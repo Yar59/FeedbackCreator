@@ -253,6 +253,7 @@ def main():
             CommandHandler('cancel', cancel),
             CommandHandler('start', cancel),
         ],
+        per_message=True,
     )
 
     dispatcher.add_handler(conv_handler)
