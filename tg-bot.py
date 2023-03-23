@@ -24,18 +24,21 @@ class States(Enum):
     start = auto()
     handle_menu = auto()
     handle_file = auto()
+    handle_link = auto()
 
 
 class Transitions(Enum):
     menu = auto()
     generate_from_file = auto()
     get_template = auto()
+    generate_by_link = auto()
 
 
 def start(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     keyboard = [
-        [InlineKeyboardButton('Сгенерировать ОС из файла', callback_data=str(Transitions.generate_from_file))]
+        [InlineKeyboardButton('Сгенерировать ОС из файла', callback_data=str(Transitions.generate_from_file))],
+        [InlineKeyboardButton('Сгенерировать ОС по ссылке', callback_data=str(Transitions.generate_by_link))],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     if query:
@@ -156,11 +159,59 @@ def generate_from_file(update: Update, context: CallbackContext) -> int:
     reply_markup = InlineKeyboardMarkup(keyboard)
     query.answer()
     query.message.reply_text(
-        text='Для создания ОС из файла нужна Excel табличка:',
+        text='Для создания ОС из файла нужна Excel табличка',
         reply_markup=reply_markup
     )
     query.message.delete()
     return States.handle_file
+
+
+def wait_for_name(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    keyboard = [
+        [InlineKeyboardButton('В меню', callback_data=str(Transitions.menu))],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.answer()
+    query.message.reply_text(
+        text='Как зовут ученика? (Имя будет использовано в ОС, отправь мне его текстом)',
+        reply_markup=reply_markup
+    )
+    query.message.delete()
+    return States.handle_link
+
+
+def handle_name(update: Update, context: CallbackContext) -> int:
+    student_name = update.message.text
+    context.user_data["student_name"] = student_name
+    keyboard = [
+        [InlineKeyboardButton('В меню', callback_data=str(Transitions.menu))],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        text='Теперь мне нужна ссылка на профиль ученика',
+        reply_markup=reply_markup
+    )
+    return States.handle_link
+
+
+def handle_link(update: Update, context: CallbackContext) -> int:
+    student_link = update.message.text
+
+    student = {
+        'Ссылка на девман': student_link,
+        'Имя для ОС': context.user_data["student_name"],
+    }
+    feedback = generate_feedback(student)
+    keyboard = [
+        [InlineKeyboardButton('В меню', callback_data=str(Transitions.menu))],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        text=f'Ос на ученика:\n{feedback}',
+        reply_markup=reply_markup
+    )
+    return States.handle_link
 
 
 def main():
@@ -184,12 +235,18 @@ def main():
         states={
             States.handle_menu: [
                 CallbackQueryHandler(generate_from_file, pattern=f'^{Transitions.generate_from_file}$'),
+                CallbackQueryHandler(wait_for_name, pattern=f'^{Transitions.generate_by_link}$'),
             ],
             States.handle_file: [
                 CallbackQueryHandler(start, pattern=f'^{Transitions.menu}$'),
                 CallbackQueryHandler(send_template, pattern=f'^{Transitions.get_template}$'),
                 CallbackQueryHandler(wait_for_file, pattern=f'^{Transitions.generate_from_file}$'),
                 MessageHandler(Filters.document, handle_file),
+            ],
+            States.handle_link: [
+                CallbackQueryHandler(start, pattern=f'^{Transitions.menu}$'),
+                MessageHandler(Filters.entity('url'), handle_link),
+                MessageHandler(Filters.text, handle_name),
             ]
         },
         fallbacks=[
