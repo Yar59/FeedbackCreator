@@ -147,7 +147,7 @@ def generate_feedback(student, dont_use_link=False, manual_additions=False):
             work_status = 'недавно сдал'
             knowledge_status = random.choice(PHRASES['knowledge_statuses']['completed'])
         feedback = dedent(f'''\
-            {student["Имя для ОС"]} {water} {work_status} {lesson_number} проект курса {module_name} 
+            {student["Имя для ОС"]} {water} {work_status} {lesson_number} проект курса "{module_name}" 
             в ходе которого {knowledge_status} {module_knowledge}. {behaviour} {commendation} На занятиях {end}
         ''')
         print(feedback)
